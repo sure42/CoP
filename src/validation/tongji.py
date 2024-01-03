@@ -65,7 +65,7 @@ def top(reranked_result):
                 print("----"+item['patch'], i)
     print(k)
     print(pos)
-result_path = VALIDATE_QUIXBUGS_DIR + '..\\..\\data\\patches\\quixbugs_validated_patches_parse_2_gram.json'
+result_path = VALIDATE_QUIXBUGS_DIR + '..\\..\\data\\patches\\defects4jv2.0_validated_patches_1_parse.json'
 # result_path = VALIDATE_QUIXBUGS_DIR + '..\\..\\data\\patches\\quixbugs_validated_patches_parse_2.json'
 reranked_result = json.load(open(result_path, 'r'))
 all_list = []
