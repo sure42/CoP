@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import OpenAIGPTLMHeadModel
+from transformers import OpenAIGPTLMHeadModel, T5EncoderModel
 from transformers import AutoTokenizer, OpenAIGPTModel
 from conv_tbc import ConvTBC #https://torch.mlverse.org/docs/reference/nnf_conv_tbc.html
 
@@ -31,15 +31,11 @@ class MyDataset(torch.utils.data.Dataset):
 class GPTDetector(nn.Module):
     def __init__(
             self, dictionary, embed_dim=384, in_channels = 192, 
-            convolutions=[[192, 5]] * 5, dropout=0.1, embed_model_file=None, num_labels = 2
+            convolutions=[[192, 5]] * 5, dropout=0.1, embed_model=None, num_labels = 2
     ):
         super(GPTDetector, self).__init__()
 
-        gpt_loaded = torch.load(embed_model_file)# 从文件加载用torch.save()保存的对象。
-        config = gpt_loaded['config']
-        gpt_model = OpenAIGPTLMHeadModel(config).cuda()
-        gpt_model.load_state_dict(gpt_loaded['model'])
-        self.embed_model = gpt_model
+        self.embed_model = embed_model
 
         self.dictionary = dictionary
         self.dropout = dropout

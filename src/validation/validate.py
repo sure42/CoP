@@ -10,7 +10,7 @@ import sys
 import random
 from validate_quixbugs import validate_quixbugs
 from validate_defects4j import validate_defects4j
-from count_module import count, count_lock
+
 VALIDATE_DIR = os.path.abspath(__file__)[: os.path.abspath(__file__).rindex('\\') + 1]
 # VALIDATE_QUIXBUGS_DIR = os.path.abspath(__file__)[: os.path.abspath(__file__).rindex('/') + 1]
 sys.path.append(VALIDATE_DIR + '../dataloader/')

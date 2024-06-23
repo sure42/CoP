@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from transformers import OpenAIGPTLMHeadModel
+from transformers import OpenAIGPTLMHeadModel, T5EncoderModel
 from transformers import AutoTokenizer, OpenAIGPTModel
 
 from torch.utils.tensorboard import SummaryWriter
@@ -333,8 +333,9 @@ class detector_trainer():
     def train(self, model_id, epochs, save_dir, gpt_file, dropout=0.1, lr=6.25e-6):
         start_time_all = time.time()        
         # 模型读取        
+        gpt_model = T5EncoderModel.from_pretrained(gpt_file)
         self.model = GPTDetector(
-            self.dictionary, embed_dim=384, dropout=dropout,embed_model_file = gpt_file,
+            self.dictionary, embed_dim=384, dropout=dropout,embed_model = gpt_model,
         ).cuda()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=6.25e-6)
 
@@ -478,7 +479,7 @@ def test():
     )
 
     trainer.model = GPTDetector(
-        trainer.dictionary, embed_dim=384,dropout=0.5,embed_model_file = gpt_file,
+        trainer.dictionary, embed_dim=384,dropout=0.5,embed_model = gpt_file,
     ).cuda()
     trainer.model.load_state_dict(loaded['model'])
     trainer.optimizer = torch.optim.Adam(trainer.model.parameters(), lr=6.25e-5)
@@ -514,7 +515,10 @@ def test_src():
     vocab_file = GPT_CONUT_TRAINER_DIR + '..\..\data\\vocabulary\\vocabulary.txt'
     train_file = GPT_CONUT_TRAINER_DIR + '..\..\data\data\\training_bpe.txt'
     valid_file = GPT_CONUT_TRAINER_DIR + '..\..\data\data\\validation_bpe.txt'
-    gpt_file = GPT_CONUT_TRAINER_DIR + '..\..\data\models\code_gpt.pt'
+    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    work_dir = os.path.dirname(src_dir)
+    gpt_file = os.path.join(work_dir, 'data/models', 'codet5p')
+    # gpt_file = GPT_CONUT_TRAINER_DIR + '..\..\data\models\code_gpt.pt'
     
     dictionary = Dictionary(vocab_file, min_cnt=0)
     print('dictionary initialized, vocab size:{}'.format(len(dictionary)))
@@ -532,8 +536,9 @@ def test_src():
     loaded = torch.load(
         model_file, map_location='cpu'
     )
+    gpt_model = T5EncoderModel.from_pretrained(gpt_file)
     trainer.model = GPTDetector(
-        trainer.dictionary, embed_dim=384, max_positions=1024,embed_model_file = gpt_file,
+        trainer.dictionary, embed_dim=384, max_positions=1024, embed_model = gpt_model,
     ).cuda()
     trainer.model.load_state_dict(loaded['model'])
     trainer.optimizer = torch.optim.Adam(trainer.model.parameters(), lr=6.25e-5)
@@ -564,7 +569,10 @@ def train(model_id, epochs = 10, dropout=0.5, lr=6.25e-6):
     vocab_file = GPT_CONUT_TRAINER_DIR + '..\..\data\\vocabulary\\vocabulary.txt'
     train_file = GPT_CONUT_TRAINER_DIR + '..\..\data\data\\training_bpe.txt'
     valid_file = GPT_CONUT_TRAINER_DIR + '..\..\data\data\\validation_bpe.txt'
-    gpt_file = GPT_CONUT_TRAINER_DIR + '..\..\data\models\code_gpt.pt'
+    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    work_dir = os.path.dirname(src_dir)
+    gpt_file = os.path.join(work_dir, 'data/models', 'codet5p')
+    # gpt_file = GPT_CONUT_TRAINER_DIR + '..\..\data\models\code_gpt.pt'
     
     dictionary = Dictionary(vocab_file, min_cnt=0)
     print('dictionary initialized, vocab size:{}'.format(len(dictionary)))

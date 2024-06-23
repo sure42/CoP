@@ -55,15 +55,17 @@ class Dictionary():
             return self.dictionary[symbol]
         return self.unk_index
 
-    def string(self, tensor, bpe_symbol=None, show_pad=False):
-        if torch.is_tensor(tensor) and tensor.dim() == 2:
+
+    # 不必要的
+    def string(self, tensor, bpe_symbol=None, show_pad=False): # 将Tensor转换为字符串
+        if torch.is_tensor(tensor) and tensor.dim() == 2: # 是否为PyTorch张量且是二维的
             return '\n'.join(self.string(t) for t in tensor).split('\n')
 
         hide = [self.eos(), self.pad()] if not show_pad else [self.eos()]
 
-        sent = ' '.join(self[i] for i in tensor if i not in hide)
-        if bpe_symbol is not None:
-            sent = (sent + ' ').replace(bpe_symbol + ' ', '').rstrip()
+        sent = ' '.join(self[i] for i in tensor if i not in hide) # 从索引中查找对应的词语添加到sent字符串中，词语之间以空格分隔 
+        if bpe_symbol is not None: 
+            sent = (sent + ' ').replace(bpe_symbol + ' ', '').rstrip() # 在生成的字符串末尾添加一个空格，然后移除所有"BPE符号 + 空格"的组合，并去除末尾多余的空格
         return sent
 
     def pad(self):

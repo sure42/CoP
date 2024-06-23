@@ -27,11 +27,11 @@ from gpt_conut_data_loader import GPTCoNuTDataLoader
 
 class GPTCoNuTTrainer():
     def __init__(self, train_loader, valid_loader, dictionary, gpt_file):
-        gpt_loaded = torch.load(gpt_file)# 从文件加载用torch.save()保存的对象。
+        gpt_loaded = torch.load(gpt_file)
         config = gpt_loaded['config']
         gpt_model = OpenAIGPTLMHeadModel(config).cuda()
         gpt_model.load_state_dict(gpt_loaded['model'])
-        self.model = gpt_model
+
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self.dictionary = dictionary
@@ -90,8 +90,8 @@ class GPTCoNuTTrainer():
             batch['net_input']['src_tokens'].cuda(),
             batch['net_input']['src_with_prev_context'].cuda(),
             batch['net_input']['ctx_tokens'].cuda(),
-            prev_tokens_index=batch['target_index'].cuda(),
-            prev_tokens_with_context=batch['target_with_prev_context'].cuda(),
+            prev_tokens_index=batch['target_index'].cuda(), # 标记prev_context和原tgt_tokens
+            prev_tokens_with_context=batch['target_with_prev_context'].cuda(), # prev_context+tgt_tokens
             labels=batch['target'].cuda(),
         )
         logits, avg_attn_scores, apr_loss, lm_loss = outputs[:4]
@@ -149,13 +149,13 @@ class GPTCoNuTTrainer():
         start_time_all = time.time()
         self.hyper_parameter = hyper_parameter
         self.model = GPTCoNuTModel(
-            self.dictionary, embed_dim=384, max_positions=1024,
+            self.dictionary, embed_dim=768, max_positions=1024,
             src_encoder_convolutions=self.hyper_parameter['src_encoder_convolutions'],
             ctx_encoder_convolutions=self.hyper_parameter['ctx_encoder_convolutions'],
             decoder_convolutions=self.hyper_parameter['decoder_convolutions'],
             dropout=self.hyper_parameter['dropout'], embed_model=self.gpt_model,
         ).cuda()
-        
+        device_ids = [0]
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=6.25e-5)
         self.model = nn.DataParallel(self.model, device_ids=device_ids)# 当迭代次数或者epoch足够大的时候，我们通常会使用nn.DataParallel函数来用多个GPU来加速训练
         # device_ids是所有可使用的GPU信号
@@ -194,7 +194,7 @@ class GPTCoNuTTrainer():
                             train_apr_loss.append(apr_loss)
                             train_lm_loss.append(lm_loss)
                         except Exception as e:
-                            # print(e)
+                            print(e)
                             # print(i, start, end)
                             oom += 1
                             # if(oom==2): 
@@ -261,14 +261,15 @@ class GPTCoNuTTrainer():
 
 
 if __name__ == '__main__':
-    # device_ids = [0, 1, 2, 3]
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
     device_ids = [0]
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"   
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+    
     vocab_file = GPT_CONUT_TRAINER_DIR + '../../data/vocabulary/vocabulary.txt'
     train_file = GPT_CONUT_TRAINER_DIR + '../../data/data/training_bpe.txt'
     valid_file = GPT_CONUT_TRAINER_DIR + '../../data/data/validation_bpe.txt'
-    gpt_file = GPT_CONUT_TRAINER_DIR + '../../data/models/code_gpt.pt'
+    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    work_dir = os.path.dirname(src_dir)
+    model_path = os.path.join(work_dir, 'data/models', 'code_gpt.pt')
     
     dictionary = Dictionary(vocab_file, min_cnt=0)
     print('dictionary initialized, vocab size:{}'.format(len(dictionary)))
@@ -278,7 +279,7 @@ if __name__ == '__main__':
     print('data loader initialized, train size:{}, validate size:{}'.
           format(train_loader.total_size, valid_loader.total_size))
 
-    trainer = GPTCoNuTTrainer(train_loader, valid_loader, dictionary, gpt_file)
+    trainer = GPTCoNuTTrainer(train_loader, valid_loader, dictionary, model_path)
 
     hyper_parameter = {
         'src_encoder_convolutions': ((192, 5),) * 1,

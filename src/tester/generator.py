@@ -41,7 +41,7 @@ class Generator():
         self.beamsearch = BeamSearch(model, dictionary, beam_size)
         # print(self.model, beam_size)
 
-    def generate(self, output_path, output_file_parse):
+    def generate(self, output_path, output_file_parse, model_id):
 
         wp = codecs.open(output_path, 'w', 'utf-8')
         wp_parse = codecs.open(output_file_parse, 'w', 'utf-8')
@@ -59,8 +59,7 @@ class Generator():
                 # elif isinstance(self.model, GPTFConvModel):
                 #     hypothesis = self.beamsearch.generate_gpt_fconv(sample)
                 if isinstance(self.model, GPTCoNuTModel):
-                    hypothesis = self.beamsearch.generate_gpt_conut_with_detect(sample)
-                    # hypothesis = self.beamsearch.generate_gpt_conut(sample)
+                    hypothesis = self.beamsearch.generate_gpt_conut_with_detect(sample, model_id)
 
             # except Exception as e:# 这个格式可以参考
             #    print(e)
@@ -131,7 +130,7 @@ class Generator():
 
 
 
-def generate_gpt_conut(vocab_file, model_file, input_file, identifier_txt_file, identifier_token_file, output_file, output_file_parse,  beam_size):
+def generate_gpt_conut(vocab_file, model_file, input_file, identifier_txt_file, identifier_token_file, output_file, output_file_parse,  beam_size, model_id):
 
     dictionary = Dictionary(vocab_file, min_cnt=0)
     print(len(dictionary))
@@ -163,41 +162,8 @@ def generate_gpt_conut(vocab_file, model_file, input_file, identifier_txt_file, 
     )
     generator = Generator(model, dictionary, data_loader, beam_size=beam_size)
     print('start generate')
-    generator.generate(output_file, output_file_parse)
+    generator.generate(output_file, output_file_parse, model_id)
 
-
-
-
-def generate_gpt_fconv(vocab_file, model_file, input_file, identifier_txt_file, identifier_token_file, output_file, output_file_parse,  beam_size):
-    dictionary = Dictionary(vocab_file, min_cnt=0)
-    print(len(dictionary))
-    loaded = torch.load(
-        model_file, map_location='cpu'
-    )
-    config = loaded['config']
-    gpt_config = config['embed_model_config']
-    gpt_config.attn_pdrop = 0
-    gpt_config.embd_pdrop = 0
-    gpt_config.resid_pdrop = 0
-    gpt_model = OpenAIGPTLMHeadModel(gpt_config)
-    model = GPTFConvModel(
-        dictionary=dictionary, embed_dim=config['embed_dim'],
-        max_positions=config['max_positions'],
-        encoder_convolutions=config['encoder_convolutions'],
-        decoder_convolutions=config['decoder_convolutions'],
-        dropout=0, embed_model=gpt_model,
-    )
-    model.load_state_dict(loaded['model'])
-    identifier_loader = IdentifierDataLoader(
-        dictionary, identifier_token_file, identifier_txt_file
-    )
-    data_loader = GPTFConvDataLoader(
-        input_file, dictionary,
-        identifier_loader=identifier_loader
-    )
-    generator = Generator(model, dictionary, data_loader, beam_size=beam_size)
-    print('start generate')
-    generator.generate(output_file)
 
 
 if __name__ == "__main__":
@@ -205,15 +171,15 @@ if __name__ == "__main__":
     input_file = GENERATOR_DIR + '../../candidate_patches/QuixBugs/quixbugs_bpe.txt'
     identifier_txt_file = GENERATOR_DIR + '../../candidate_patches/QuixBugs/identifier.txt'
     identifier_token_file = GENERATOR_DIR + '../../candidate_patches/QuixBugs/identifier.tokens'
-    beam_size = 10
+    beam_size = 100
     # beam_size = 53*
     os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+    model_id = 1
+    model_file = GENERATOR_DIR + '../../data/models/gpt_conut_{}.pt'.format(model_id)
+    output_file = GENERATOR_DIR + '../../data/patches/gpt_conut_{}_quixbugs_only_gram1.txt'.format(model_id)
+    output_file_parse = GENERATOR_DIR + '../../data/patches/gpt_conut_parse_{}_quixbugs_only_gram1.txt'.format(model_id)
 
-    model_file = GENERATOR_DIR + '../../data/models/gpt_conut.pt'
-    output_file = GENERATOR_DIR + '../../data/patches/gpt_conut_2_quixbugs_only_gram1.txt'
-    output_file_parse = GENERATOR_DIR + '../../data/patches/gpt_conut_parse_2_quixbugs_only_gram1.txt'
-
-    generate_gpt_conut(vocab_file, model_file, input_file, identifier_txt_file, identifier_token_file, output_file, output_file_parse,  beam_size)
+    generate_gpt_conut(vocab_file, model_file, input_file, identifier_txt_file, identifier_token_file, output_file, output_file_parse,  beam_size, model_id)
  
     # model_file = GENERATOR_DIR + '..\..\data\models\gpt_fconv_1.pt'
     # output_file = GENERATOR_DIR + '..\..\data\patches\gpt_fconv_2.txt'

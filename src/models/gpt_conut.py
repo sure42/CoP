@@ -8,7 +8,7 @@ from conv_tbc import ConvTBC #https://torch.mlverse.org/docs/reference/nnf_conv_
 
 class GPTCoNuTModel(nn.Module):
     def __init__(
-            self, dictionary, embed_dim=384, max_positions=1024,
+            self, dictionary, embed_dim=768, max_positions=1024,
             src_encoder_convolutions=((192, 5),) * 5,
             ctx_encoder_convolutions=((384, 5),) * 7,
             decoder_convolutions=((192, 5),) * 5,
@@ -74,7 +74,7 @@ class GPTCoNuTModel(nn.Module):
 
 class GPTFConvEncoder(nn.Module):# encoder内部的编码
     def __init__(
-            self, dictionary, embed_dim=384, max_positions=1024,
+            self, dictionary, embed_dim=768, max_positions=1024,
             convolutions=((192, 5),) * 5, dropout=0.1,
     ):
         super(GPTFConvEncoder, self).__init__()
@@ -122,7 +122,7 @@ class GPTFConvEncoder(nn.Module):# encoder内部的编码
             # torch.ones返回一个全为1 的张量，形状由可变参数sizes定义。
             # masked_fill_(mask, value) 用value填充tensor中与mask中值为1位置相对应的元素。mask的形状必须与要填充的tensor形状一致。
             #   这里也就是将所有原值为0的地方用0填充，src_tokens_with_prev_context有一部分是用0填充的
-            embed = share_embed_model.transformer(
+            embed = share_embed_model(
                 src_tokens_with_prev_context,
                 attention_mask=attention_mask,
             )[0]            # B, context_src, H
@@ -147,7 +147,7 @@ class GPTFConvEncoder(nn.Module):# encoder内部的编码
             else:
                 attention_mask = torch.ones(src_tokens.size()).masked_fill_(
                     src_tokens == 0, 0).float()
-            x = share_embed_model.transformer(
+            x = share_embed_model(
                 src_tokens,
                 attention_mask=attention_mask,
             )[0]  # B, context, H
@@ -225,160 +225,10 @@ class GPTFConvEncoder(nn.Module):# encoder内部的编码
             'encoder_padding_mask': encoder_padding_mask,  # B x T
         }
 
-class GPTFConvEncoder_copy(nn.Module):
-    def __init__(
-            self, dictionary, embed_dim=384, max_positions=1024,
-            convolutions=((192, 5),) * 5, dropout=0.1,
-    ):
-        super(GPTFConvEncoder, self).__init__()
-        self.dictionary = dictionary
-        self.dropout = dropout
-
-        self.embed_norm = nn.LayerNorm(embed_dim)
-
-        convolutions = extend_conv_spec(convolutions)
-        in_channels = convolutions[0][0]
-        self.fc1 = linear(embed_dim, in_channels, dropout=dropout)
-        self.convolutions = nn.ModuleList()
-        self.attentions = nn.ModuleList()
-        self.norms = nn.ModuleList()
-        self.residuals = []
-
-        layer_in_channels = [in_channels]
-        for i, (out_channels, kernel_size, residual) in enumerate(convolutions):
-            if kernel_size % 2 == 1:
-                padding = kernel_size // 2# “//”在Python中表示整数除法，返回不大于结果的一个最大的整数，即除法结果向下取整
-            else:
-                padding = 0
-            self.convolutions.append(
-                convtbc(in_channels, out_channels * 2, kernel_size,
-                        dropout=dropout, padding=padding)
-            )
-            self.attentions.append(
-                AttentionLayer(out_channels, out_channels) if i == len(convolutions) - 1 else None
-            )
-            self.norms.append(nn.LayerNorm(out_channels))# 做归一化
-            self.residuals.append(residual)# 残差层
-            in_channels = out_channels
-            layer_in_channels.append(out_channels)
-        self.fc2 = linear(in_channels, embed_dim)
-
-    def forward(self, src_tokens, src_tokens_with_prev_context=None, share_embed_model=None):
-        assert share_embed_model is not None
-        if src_tokens_with_prev_context is not None:
-            if src_tokens.is_cuda:
-                attention_mask = torch.ones(src_tokens_with_prev_context.size()).cuda().masked_fill_(
-                    src_tokens_with_prev_context == 0, 0).float().cuda() # B,L batch_size和长度
-            else:
-                attention_mask = torch.ones(src_tokens_with_prev_context.size()).masked_fill_(
-                    src_tokens_with_prev_context == 0, 0).float()
-            # torch.ones返回一个全为1 的张量，形状由可变参数sizes定义。
-            # masked_fill_(mask, value) 用value填充tensor中与mask中值为1位置相对应的元素。mask的形状必须与要填充的tensor形状一致。
-            #   这里也就是将所有原值为0的地方用0填充，src_tokens_with_prev_context有一部分是用0填充的
-            embed = share_embed_model.transformer(
-                src_tokens_with_prev_context,
-                attention_mask=attention_mask,
-            )[0]            # B, context_src, H
-
-            bsz = embed.size(0)# 这里应该是用来记录大小的-B条数据
-            embed = embed.view(-1, embed.size(-1))      # B x context_src, H
-            mask = src_tokens.view(-1)                  # B x context_src
-            mask = mask.eq(1)
-            # torch.eq(input, other, *, out=None) 对两个张量Tensor进行逐元素的比较，若相同位置的两个元素相同，则返回True
-            
-            x = embed[mask, :]          # B x src, H
-            x = x.view(bsz, -1, x.size(1))      # B, src, H
-
-            src_tokens_with_pre_context = src_tokens_with_prev_context.view(-1)  # B x context_src
-            src_tokens = src_tokens_with_pre_context[mask]      # B x src
-            src_tokens = src_tokens.view(bsz, -1)               # B, src
-            # 130行到这里都是调整size
-        else:
-            if src_tokens.is_cuda:
-                attention_mask = torch.ones(src_tokens.size()).cuda().masked_fill_(
-                    src_tokens == 0, 0).float().cuda()
-            else:
-                attention_mask = torch.ones(src_tokens.size()).masked_fill_(
-                    src_tokens == 0, 0).float()
-            x = share_embed_model.transformer(
-                src_tokens,
-                attention_mask=attention_mask,
-            )[0]  # B, context, H
-
-        # normalize the embedding of buggy/context lines
-        x = self.embed_norm(x)
-
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        input_embedding = x
-
-        # project to size of convolution / linear layer
-        x = self.fc1(x)
-
-        # used to mask padding in input
-        encoder_padding_mask = src_tokens.eq(0).t()  # -> T x B
-
-        # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
-
-        residuals = [x]
-        #这里才开始本模型的训练
-        # temporal convolutions / convolutional layer / fconv part 时域卷积/卷积层/ fconv部分
-        for conv, attention, res_layer, norm in zip(self.convolutions, self.attentions,
-                                                    self.residuals, self.norms):
-            if res_layer > 0:
-                residual = residuals[-res_layer]
-            else:
-                residual = None
-
-            if encoder_padding_mask is not None:
-                x = x.masked_fill(encoder_padding_mask.unsqueeze(-1), 0)
-            target_embedding = x.transpose(0, 1)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-            if conv.kernel_size[0] % 2 == 1:
-                # padding is implicit（含蓄的，未言明的） in the conv
-                x = conv(x)
-            else:
-                padding_l = (conv.kernel_size[0] - 1) // 2
-                padding_r = conv.kernel_size[0] // 2
-                x = F.pad(x, (0, 0, 0, 0, padding_l, padding_r))
-                x = conv(x)
-            x = F.glu(x, dim=2)
-
-            # self attention
-            if attention is not None:
-                x = x.transpose(0, 1)
-                x_, _ = attention(x, target_embedding, (x.transpose(1, 2).contiguous(), x), encoder_padding_mask.t())
-                x = torch.cat([x, x_], dim=2)
-                x = F.glu(x, dim=2)
-                x = x.transpose(0, 1)
-
-            if residual is not None:
-                x = (x + residual) * math.sqrt(0.5)
-            x = norm(x)
-            residuals.append(x)
-
-        # T x B x C -> B x T x C
-        x = x.transpose(1, 0)
-
-        # project back to size of embedding / linear layer
-        x = self.fc2(x)
-
-        if encoder_padding_mask is not None:
-            encoder_padding_mask = encoder_padding_mask.t()  # -> B x T
-            x = x.masked_fill(encoder_padding_mask.unsqueeze(-1), 0)
-
-        # add output to input embedding for attention
-        y = (x + input_embedding) * math.sqrt(0.5)
-
-        return {
-            'src_tokens': src_tokens,
-            'encoder_out': (x, y),
-            'encoder_padding_mask': encoder_padding_mask,  # B x T
-        }
 
 class GPTCoNuTEncoder(nn.Module):# 整体的encoder
     def __init__(
-            self, dictionary, embed_dim=384, max_positions=1024,
+            self, dictionary, embed_dim=768, max_positions=1024,
             src_convolutions=((192, 5),) * 5, ctx_convolutions=((384, 5),) * 7,
             dropout=0.1,
     ):
@@ -420,7 +270,7 @@ class GPTCoNuTEncoder(nn.Module):# 整体的encoder
 
 class GPTFConvDecoder(nn.Module):
     def __init__(
-            self, dictionary, embed_dim=384, max_positions=1024,
+            self, dictionary, embed_dim=768, max_positions=1024,
             convolutions=((192, 5),) * 5, dropout=0.1,
     ):
         super(GPTFConvDecoder, self).__init__()
@@ -453,13 +303,13 @@ class GPTFConvDecoder(nn.Module):
 
     def forward(self, prev_tokens_index, encoder_out_dict,
                 prev_tokens_with_context=None, share_embed_model=None, output_lm_logits=False):
-        # prev_tokens_index---tgt_index
+        # prev_tokens_index---tgt_index 标记prev_context和原tgt_tokens
         # encoder_out_dict---encoder_out
         # prev_tokens_with_context---target_with_prev_context
 
         src_tokens = encoder_out_dict['src_tokens']
         encoder_out = encoder_out_dict['encoder_out']
-        encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
+        encoder_padding_mask = encoder_out_dict['encoder_padding_mask'] # 这个值是为了计算自注意力
         encoder_a, encoder_b = self._split_encoder_out(encoder_out)# x,y
 
         assert prev_tokens_with_context is not None
@@ -484,11 +334,11 @@ class GPTFConvDecoder(nn.Module):
             lm_logits = F.log_softmax(lm_logits, dim=-1)    # B, context_tgt, H
         bsz = embed.size(0)
         mask = prev_tokens_index.view(-1)  # B x context_tgt
-        mask = mask.eq(1)
+        mask = mask.eq(1) # 做遮盖
         embed = embed.view(-1, embed.size(-1))  # B x context_tgt, H
 
         # take out the target part / exclude context before
-        x = embed[mask, :]  # B x tgt, H
+        x = embed[mask, :]  # B x tgt, H 取出tgt的对象，去除prev对应的内容
 
         x = x.view(bsz, -1, x.size(1))  # B, tgt, H
 
@@ -567,148 +417,6 @@ class GPTFConvDecoder(nn.Module):
         encoder_a = encoder_a.transpose(1, 2).contiguous()
         result = (encoder_a, encoder_b)
         return result
-
-class GPTFConvDecoder_copy(nn.Module):
-    def __init__(
-            self, dictionary, embed_dim=384, max_positions=1024,
-            convolutions=((192, 5),) * 5, dropout=0.1,
-    ):
-        super(GPTFConvDecoder, self).__init__()
-        self.dropout = dropout
-
-        self.embed_norm = nn.LayerNorm(embed_dim)
-
-        convolutions = extend_conv_spec(convolutions)
-        in_channels = convolutions[0][0]
-        self.fc1 = linear(embed_dim, in_channels, dropout=dropout)
-        self.convolutions = nn.ModuleList()
-        self.attentions = nn.ModuleList()
-        self.norms = nn.ModuleList()
-        self.residuals = []
-
-        layer_in_channels = [in_channels]
-        for i, (out_channels, kernel_size, residual) in enumerate(convolutions):
-            self.convolutions.append(
-                convtbc(in_channels, out_channels * 2, kernel_size,
-                        padding=(kernel_size - 1), dropout=dropout, remove_future=True)
-            )
-            self.attentions.append(AttentionLayer(out_channels, embed_dim))
-            self.norms.append(nn.LayerNorm(out_channels))
-            self.residuals.append(residual)
-            in_channels = out_channels
-            layer_in_channels.append(out_channels)
-
-        self.fcg = linear(embed_dim + out_channels, 1)
-        self.fc2 = linear(in_channels, len(dictionary))
-
-    def forward(self, prev_tokens_index, encoder_out_dict,
-                prev_tokens_with_context=None, share_embed_model=None, output_lm_logits=False):
-        src_tokens = encoder_out_dict['src_tokens']
-        encoder_out = encoder_out_dict['encoder_out']
-        encoder_padding_mask = encoder_out_dict['encoder_padding_mask']
-        encoder_a, encoder_b = self._split_encoder_out(encoder_out)
-
-        assert prev_tokens_with_context is not None
-        if prev_tokens_index.is_cuda:
-            attention_mask = torch.ones(prev_tokens_with_context.size()).cuda().masked_fill_(# 用value填充tensor中与mask中值为1位置相对应的元素
-                prev_tokens_with_context == 0, 0).float().cuda()
-        else:
-            attention_mask = torch.ones(prev_tokens_with_context.size()).masked_fill_(
-                prev_tokens_with_context == 0, 0).float()
-
-        # get the embedding of the decoded sequence from gpt
-        embed = share_embed_model.transformer(
-            prev_tokens_with_context,
-            attention_mask=attention_mask,
-        )[0]  # B, context_tgt, H
-        lm_logits = None
-        if output_lm_logits:
-            lm_logits = share_embed_model.lm_head(embed)
-            lm_logits = F.log_softmax(lm_logits, dim=-1)    # B, context_tgt, H
-        bsz = embed.size(0)
-        mask = prev_tokens_index.view(-1)  # B x context_tgt
-        mask = mask.eq(1)
-
-        embed = embed.view(-1, embed.size(-1))  # B x context_tgt, H
-
-        # take out the target part / exclude context before
-        x = embed[mask, :]  # B x tgt, H
-
-        x = x.view(bsz, -1, x.size(1))  # B, tgt, H
-
-        x = self.embed_norm(x)
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        target_embedding = x
-
-        # project to size of convolution
-        x = self.fc1(x)
-
-        # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
-
-        avg_attn_scores = None
-        copy_scores = None
-        num_attn_layers = len(self.attentions)
-        residuals = [x]
-        for conv, attention, res_layer, norm in zip(self.convolutions, self.attentions,
-                                                    self.residuals, self.norms):
-            if res_layer > 0:
-                residual = residuals[-res_layer]
-            else:
-                residual = None
-
-            x = F.dropout(x, p=self.dropout, training=self.training)
-            x = conv(x)
-            x = F.glu(x, dim=2)
-
-            # attention     T x B x C -> B x T x C
-            x = x.transpose(0, 1)
-            x, attn_scores = attention(x, target_embedding, (encoder_a, encoder_b), encoder_padding_mask)
-            copy_scores = attn_scores
-            attn_scores = attn_scores / num_attn_layers
-            if avg_attn_scores is None:
-                avg_attn_scores = attn_scores
-            else:
-                avg_attn_scores.add_(attn_scores)
-            x = x.transpose(0, 1)
-
-            if residual is not None:
-                x = (x + residual) * math.sqrt(0.5)
-            x = norm(x)
-            residuals.append(x)
-
-        # T x B x C -> B x T x C
-        x = x.transpose(0, 1)
-
-        # B x T x [C + E]
-        h = torch.cat([x, target_embedding], dim=-1)
-        p_gen = torch.sigmoid(self.fcg(h))
-
-        # project back to size of vocabulary
-        # B x T x C
-        x = self.fc2(x)
-
-        x = F.softmax(x, dim=-1)
-
-        x = x * p_gen
-
-        x = x.scatter_add(
-            2, src_tokens.unsqueeze(1).repeat(1, x.size(1), 1),
-            copy_scores * (1 - p_gen)
-        )
-
-        x = torch.log(x + 1e-32)
-        return x, avg_attn_scores, lm_logits
-
-    def _split_encoder_out(self, encoder_out):
-        """Split and transpose encoder outputs."""
-        # transpose only once to speed up attention layers
-        encoder_a, encoder_b = encoder_out
-        #print(encoder_a.size(), encoder_b.size())
-        encoder_a = encoder_a.transpose(1, 2).contiguous()
-        result = (encoder_a, encoder_b)
-        return result
-
 
 class AttentionLayer(nn.Module):
     def __init__(self, conv_channels, embed_dim):

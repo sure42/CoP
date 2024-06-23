@@ -3,7 +3,7 @@ import torch
 import sys
 import os
 import javalang
-from transformers import OpenAIGPTLMHeadModel
+from transformers import OpenAIGPTLMHeadModel, T5EncoderModel
 import time
 GENERATOR_DIR = os.path.abspath(__file__)[: os.path.abspath(__file__).rindex('\\') + 1]
 # sys.path.append(GENERATOR_DIR + '../models/')
@@ -143,7 +143,7 @@ def generate_gpt_conut(vocab_file, model_file, input_file, identifier_txt_file, 
     gpt_config.attn_pdrop = 0
     gpt_config.embd_pdrop = 0
     gpt_config.resid_pdrop = 0
-    gpt_model = OpenAIGPTLMHeadModel(gpt_config)# 加载GPT模型配置
+    gpt_model = T5EncoderModel.from_pretrained(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data/models', 'codet5p'))
     model = GPTCoNuTModel(
         dictionary=dictionary, embed_dim=config['embed_dim'],
         max_positions=config['max_positions'],
@@ -165,53 +165,18 @@ def generate_gpt_conut(vocab_file, model_file, input_file, identifier_txt_file, 
     print('start generate')
     generator.generate(output_file, output_file_parse)
 
-
-
-
-def generate_gpt_fconv(vocab_file, model_file, input_file, identifier_txt_file, identifier_token_file, output_file, output_file_parse,  beam_size):
-    dictionary = Dictionary(vocab_file, min_cnt=0)
-    print(len(dictionary))
-    loaded = torch.load(
-        model_file, map_location='cpu'
-    )
-    config = loaded['config']
-    gpt_config = config['embed_model_config']
-    gpt_config.attn_pdrop = 0
-    gpt_config.embd_pdrop = 0
-    gpt_config.resid_pdrop = 0
-    gpt_model = OpenAIGPTLMHeadModel(gpt_config)
-    model = GPTFConvModel(
-        dictionary=dictionary, embed_dim=config['embed_dim'],
-        max_positions=config['max_positions'],
-        encoder_convolutions=config['encoder_convolutions'],
-        decoder_convolutions=config['decoder_convolutions'],
-        dropout=0, embed_model=gpt_model,
-    )
-    model.load_state_dict(loaded['model'])
-    identifier_loader = IdentifierDataLoader(
-        dictionary, identifier_token_file, identifier_txt_file
-    )
-    data_loader = GPTFConvDataLoader(
-        input_file, dictionary,
-        identifier_loader=identifier_loader
-    )
-    generator = Generator(model, dictionary, data_loader, beam_size=beam_size)
-    print('start generate')
-    generator.generate(output_file)
-
-
 if __name__ == "__main__":
     vocab_file = GENERATOR_DIR + '../../data/vocabulary/vocabulary.txt'
     input_file = GENERATOR_DIR + '../../candidate_patches/QuixBugs/quixbugs_bpe.txt'
     identifier_txt_file = GENERATOR_DIR + '../../candidate_patches/QuixBugs/identifier.txt'
     identifier_token_file = GENERATOR_DIR + '../../candidate_patches/QuixBugs/identifier.tokens'
-    beam_size = 1000
+    beam_size = 10
     # beam_size = 53*
     os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
-    model_file = GENERATOR_DIR + '../../data/models/gpt_conut_1.pt'
-    output_file = GENERATOR_DIR + '../../data/patches/gpt_conut_1_quixbugs.txt'
-    output_file_parse = GENERATOR_DIR + '../../data/patches/gpt_conut_parse_1_quixbugs.txt'
+    model_file = GENERATOR_DIR + '../../data/models/gpt_conut_4.pt'
+    output_file = GENERATOR_DIR + '../../data/patches/gpt_conut_4_quixbugs.txt'
+    output_file_parse = GENERATOR_DIR + '../../data/patches/gpt_conut_parse_4_quixbugs.txt'
 
     generate_gpt_conut(vocab_file, model_file, input_file, identifier_txt_file, identifier_token_file, output_file, output_file_parse,  beam_size)
  
