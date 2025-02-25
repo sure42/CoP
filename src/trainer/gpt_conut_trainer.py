@@ -149,7 +149,7 @@ class GPTCoNuTTrainer():
         start_time_all = time.time()
         self.hyper_parameter = hyper_parameter
         self.model = GPTCoNuTModel(
-            self.dictionary, embed_dim=768, max_positions=1024,
+            self.dictionary, embed_dim=384, max_positions=1024,
             src_encoder_convolutions=self.hyper_parameter['src_encoder_convolutions'],
             ctx_encoder_convolutions=self.hyper_parameter['ctx_encoder_convolutions'],
             decoder_convolutions=self.hyper_parameter['decoder_convolutions'],
@@ -188,16 +188,16 @@ class GPTCoNuTTrainer():
                         # max_ctx记录之前最长的prev_context长度，max_tgt--target，max_src--source
                         # 之所以记录最长的加上这一批target和source，是为了避免train_step/collater对src_with_prev_context做merge时超过长度
                         # 虽说根据本项目里的数据集出现这种情况的可能性很小，但仍有可能出现，所以加这一句来保证鲁棒性 
-                        try:
-                            loss, apr_loss, lm_loss = self.train_step(samples)
-                            train_loss.append(loss)
-                            train_apr_loss.append(apr_loss)
-                            train_lm_loss.append(lm_loss)
-                        except Exception as e:
-                            print(e)
-                            # print(i, start, end)
-                            oom += 1
-                            # if(oom==2): 
+                        # try:
+                        loss, apr_loss, lm_loss = self.train_step(samples)
+                        train_loss.append(loss)
+                        train_apr_loss.append(apr_loss)
+                        train_lm_loss.append(lm_loss)
+                        # except Exception as e:
+                        #     print(e)
+                        #     # print(i, start, end)
+                        #     oom += 1
+                        #     # if(oom==2): 
                             #     assert 1==2
 
                         start = end

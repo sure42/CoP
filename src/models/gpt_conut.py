@@ -8,7 +8,7 @@ from conv_tbc import ConvTBC #https://torch.mlverse.org/docs/reference/nnf_conv_
 
 class GPTCoNuTModel(nn.Module):
     def __init__(
-            self, dictionary, embed_dim=768, max_positions=1024,
+            self, dictionary, embed_dim=384, max_positions=1024,
             src_encoder_convolutions=((192, 5),) * 5,
             ctx_encoder_convolutions=((384, 5),) * 7,
             decoder_convolutions=((192, 5),) * 5,
@@ -61,6 +61,7 @@ class GPTCoNuTModel(nn.Module):
             
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., :].contiguous()
+            print(shift_logits.size(), shift_labels.size())
             loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
             
             shift_lm_logits = lm_logits[..., :-2, :].contiguous()
@@ -74,7 +75,7 @@ class GPTCoNuTModel(nn.Module):
 
 class GPTFConvEncoder(nn.Module):# encoder内部的编码
     def __init__(
-            self, dictionary, embed_dim=768, max_positions=1024,
+            self, dictionary, embed_dim=384, max_positions=1024,
             convolutions=((192, 5),) * 5, dropout=0.1,
     ):
         super(GPTFConvEncoder, self).__init__()
@@ -115,26 +116,26 @@ class GPTFConvEncoder(nn.Module):# encoder内部的编码
         if src_tokens_with_prev_context is not None:
             if src_tokens.is_cuda:
                 attention_mask = torch.ones(src_tokens_with_prev_context.size()).cuda().masked_fill_(
-                    src_tokens_with_prev_context == 0, 0).float().cuda() # B,L batch_size和长度
+                    src_tokens_with_prev_context == 0, 0).float().cuda() # B,L batch_size和长度   2*26
             else:
                 attention_mask = torch.ones(src_tokens_with_prev_context.size()).masked_fill_(
                     src_tokens_with_prev_context == 0, 0).float()
             # torch.ones返回一个全为1 的张量，形状由可变参数sizes定义。
             # masked_fill_(mask, value) 用value填充tensor中与mask中值为1位置相对应的元素。mask的形状必须与要填充的tensor形状一致。
             #   这里也就是将所有原值为0的地方用0填充，src_tokens_with_prev_context有一部分是用0填充的
-            embed = share_embed_model(
+            embed = share_embed_model.transformer(
                 src_tokens_with_prev_context,
                 attention_mask=attention_mask,
-            )[0]            # B, context_src, H
+            )[0]  # [0] 是取出tensor，直接的结果是tuple          # B, context_src, H 2*26*384
 
-            bsz = embed.size(0)# 这里应该是用来记录大小的-B条数据
-            embed = embed.view(-1, embed.size(-1))      # B x context_src, H
-            mask = src_tokens.view(-1)                  # B x context_src  这里的src_token是区分bug与前文部分
+            bsz = embed.size(0)# 这里应该是用来记录大小的-B条数据 2
+            embed = embed.view(-1, embed.size(-1))      # B x context_src, H 52*384
+            mask = src_tokens.view(-1)                  # B x context_src  52 这里的src_token是区分bug与前文部分
             mask = mask.eq(1)# 取出bug行部分
             # torch.eq(input, other, *, out=None) 对两个张量Tensor进行逐元素的比较，若相同位置的两个元素相同，则返回True
             
-            x = embed[mask, :]          # B x src, H
-            x = x.view(bsz, -1, x.size(1))      # B, src, H x记录的是
+            x = embed[mask, :]          # B x src, H   28*384
+            x = x.view(bsz, -1, x.size(1))      # B, src, H  2*14*384 x记录的是
 
             src_tokens_with_pre_context = src_tokens_with_prev_context.view(-1)  # B x context_src
             src_tokens = src_tokens_with_pre_context[mask]      # B x src
@@ -147,7 +148,7 @@ class GPTFConvEncoder(nn.Module):# encoder内部的编码
             else:
                 attention_mask = torch.ones(src_tokens.size()).masked_fill_(
                     src_tokens == 0, 0).float()
-            x = share_embed_model(
+            x = share_embed_model.transformer(
                 src_tokens,
                 attention_mask=attention_mask,
             )[0]  # B, context, H
@@ -228,7 +229,7 @@ class GPTFConvEncoder(nn.Module):# encoder内部的编码
 
 class GPTCoNuTEncoder(nn.Module):# 整体的encoder
     def __init__(
-            self, dictionary, embed_dim=768, max_positions=1024,
+            self, dictionary, embed_dim=384, max_positions=1024,
             src_convolutions=((192, 5),) * 5, ctx_convolutions=((384, 5),) * 7,
             dropout=0.1,
     ):
@@ -270,7 +271,7 @@ class GPTCoNuTEncoder(nn.Module):# 整体的encoder
 
 class GPTFConvDecoder(nn.Module):
     def __init__(
-            self, dictionary, embed_dim=768, max_positions=1024,
+            self, dictionary, embed_dim=384, max_positions=1024,
             convolutions=((192, 5),) * 5, dropout=0.1,
     ):
         super(GPTFConvDecoder, self).__init__()
@@ -404,7 +405,7 @@ class GPTFConvDecoder(nn.Module):
         x = x.scatter_add(
             2, src_tokens.unsqueeze(1).repeat(1, x.size(1), 1),
             copy_scores * (1 - p_gen)
-        )
+        ) # src的东西加到tgt上，保证了生成的与目标tgt一致
 
         x = torch.log(x + 1e-32)
         return x, avg_attn_scores, lm_logits
